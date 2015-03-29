@@ -11,36 +11,10 @@
 
 import re
     
-file = open( "test-files/main.js" )
+file = open( "test-files/mini.js" )
 full = file.read()
 
 fake = "oone{ foo bar twoo{ baz } qux } outside{ again }"
-#lst = re.findall( "({[^{}]*})", fake )
-#lst = re.findall( "{", fake )
-#print( lst )
-
-def climb( string ):
-    m = re.search( "([{}])", string )
-    if not m:
-        return
-    if m.group( 0 ) == '{':
-        print( "open" )
-    else:
-        print( "close" )
-    climb( string[ m.end() : ])
-
-def climb2( string, parent ):
-    m = re.search( "([{}])", string )
-    if not m:
-        return
-    if m.group( 0 ) == '{':
-        print( "open" )
-        newChild = { "name": "foo", "parent": parent, "children": [] }
-        parent['children'].append( newChild )
-    else:
-        print( "close" )
-        newChild = parent['parent']
-    climb2( string[ m.end() : ], newChild )
 
 def climb3( string, parent ):
     m = re.search( "([{}])", string )
@@ -62,5 +36,5 @@ def climb3( string, parent ):
 root = { "name": "root", 
          "parent": None,
          "children": [] }
-climb3( fake, root )
+climb3( full, root )
 # 
