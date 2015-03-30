@@ -16,6 +16,7 @@ full = file.read()
 
 curlybraces_re = re.compile( "([{}])" )
 
+
 def climb3( string, 
             parent, 
             search_offset=0 ):
@@ -52,4 +53,3 @@ root = { "name": "root",
          "children": [] }
 climb3( full, root )
 pretty_print( root )
-# 
