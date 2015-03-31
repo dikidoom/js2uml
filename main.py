@@ -1,4 +1,4 @@
-# uml-painter
+# js2uml
 #
 # creates a flowchart (graphviz .dot file) from a .js program
 # hacker: philipp dikmann
@@ -19,22 +19,30 @@
 
 import re
     
+# -----------------------------------------------------------------------------
+# variables
+
+# regular expressions
 # comments
-inlinecomments_re = re.compile( "//.*?$", re.M )
-comments_re = re.compile( "/\*.*?\*/", re.S )
+inlinecomments_re    = re.compile( "//.*?$", re.M )
+comments_re          = re.compile( "/\*.*?\*/", re.S )
+
 # block structure
-curlybraces_re = re.compile( "([{}])" )
+curlybraces_re       = re.compile( "([{}])" )
+
 # things we care about ...
-functions_re = re.compile( "function\s*([^\(]+?)\s*\(.*?\)\s*{" )
-lambdas_re = re.compile( "([^\s]*?)\s*[=:]\s*function.*?{" )
-objects_re = re.compile( "([^\s]*?)\s*[=:]\s*{" ) 
+functions_re         = re.compile( "function\s*([^\(]+?)\s*\(.*?\)\s*{" )
+lambdas_re           = re.compile( "([^\s]*?)\s*[=:]\s*function.*?{" )
+objects_re           = re.compile( "([^\s]*?)\s*[=:]\s*{" ) 
+
 # ... and things we don't
 throwaway_lambdas_re = re.compile( "[^=:]\s*(function).*?{" )
-if_re = re.compile( "(if)\s*\(.*?\)\s*{" )
-else_re = re.compile( "}\s*(else)\s*{" )
-for_re = re.compile( "(for)\s*\(.*?\)\s*{" )
-return_re = re.compile( "(return)\s*{" )
+if_re                = re.compile( "(if)\s*\(.*?\)\s*{" )
+else_re              = re.compile( "}\s*(else)\s*{" )
+for_re               = re.compile( "(for)\s*\(.*?\)\s*{" )
+return_re            = re.compile( "(return)\s*{" )
 
+# scope tree root
 root = { "name": "root",
          "type": "top",
          "start": None,
@@ -42,9 +50,13 @@ root = { "name": "root",
          "parent": None,
          "children": [] }
 
+# -----------------------------------------------------------------------------
+# functions
+
 def climb3( string, 
             parent, 
             search_offset=0 ):
+    # generate scope tree by recursively matching curly braces
     match = curlybraces_re.search( string, search_offset )
     if not match:
         return
@@ -96,7 +108,8 @@ def pretty_print( root, indent = 0 ):
     for e in root['children']:
         pretty_print( e, indent + 4 )
 
-# Test
+# -----------------------------------------------------------------------------
+# usage
 
 file = open( "test-files/mini.js" )
 #file = open( "test-files/main.js" )
