@@ -1,4 +1,6 @@
-function first( x, y ){ return x * y; }
+function first ( x, y ){ return x * y; }
+
+function first_again( x ){ return x * x; }
 
 second = function(){ return first( 23, 42 ); }
 
