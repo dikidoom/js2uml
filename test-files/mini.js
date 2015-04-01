@@ -1,6 +1,9 @@
+var a, b, c;
+var d = 123;
+
 function first ( x, y ){ return x * y; }
 
-function first_again( x ){ return x * x; }
+function first_again( x ){ var n = x; return n * n; }
 
 second = function(){ return first( 23, 42 ); }
 
