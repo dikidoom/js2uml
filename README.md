@@ -4,4 +4,14 @@ WIP!
 
 uses Python 3.4.3
 
-look for example .dot & .sh in test-files
+#Dependencies
+
+##graphviz 
+
+(http://graphviz.org/)
+
+##graphviz python bindings 
+
+(https://pypi.python.org/pypi/graphviz/0.4.3)
+
+`$ pip install graphviz`

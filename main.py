@@ -10,14 +10,22 @@
 # [x] use indices and re.match to find the blocks' preceding statements and figure out their type and name
 # [x] strip comments from file before parsing
 # [ ] identify all necessary js blocks by regexp
+# [ ] resolve 'this.'-references (both as names and as calls)
+# [ ] generate symbols for callable blocks
+# [ ] parse 'called known functions' from block body
+# [ ] correlate called fns with gensyms
+
 # [ ] find a better python representation than dictionaries
 # [ ] remove uninteresting blocks (if, for, return, ...)
+
 # [ ] .dot helper functions
 # [ ] build .dot representation
 # [ ] shell out to graphviz
 # [ ] profit
 
 import re
+import subprocess
+import graphviz
     
 # -----------------------------------------------------------------------------
 # variables
@@ -62,8 +70,8 @@ def climb3( string,
         return
     if match.group( 0 ) == '{':
         # print( "open" )
-        nextBlock = { "name": "UNKNOWN",
-                      "type": "UNKNOWN",
+        nextBlock = { "name": None,
+                      "type": None,
                       "start": match.start(), # including '{'
                       "parent": parent,
                       "children": [] }
@@ -103,10 +111,37 @@ def pretty_print( root, indent = 0 ):
     print( " " * indent, 
            root['name'],
            "(", root['type'], ")",
-           root['start'], root['end'],
+           #root['start'], root['end'],
            sep = " " )
     for e in root['children']:
         pretty_print( e, indent + 4 )
+
+gensym_counter = 0
+
+print( 'hey duude', gensym_counter )
+
+def add_gensym( root ):
+    global gensym_counter
+    root['gensym'] = 'gensym' + str( gensym_counter )
+    gensym_counter += 1
+    for child in root['children']:
+        add_gensym( child )
+
+def add_nodes( root, graph ):
+    if root['type'] == 'object':
+        graph.attr( 'node', shape='box' )
+    else:
+        graph.attr( 'node', shape='ellipse' )
+    graph.node( root['gensym'], root['name'] )
+    for child in root['children']:
+        add_nodes( child, graph )
+    return graph
+
+def add_edges( root, graph ):
+    graph.attr( 'edge', arrowhead='odot')
+    for child in root['children']:
+        graph.edge( root['gensym'], child['gensym'] )
+        add_edges( child, graph )
 
 # -----------------------------------------------------------------------------
 # usage
@@ -121,11 +156,6 @@ full = comments_re.sub( "", full )
 
 # build scope tree
 climb3( full, root )
-#pretty_print( root )
-
-#print( 'all named functions', functions_re.findall( full ))
-#print( 'all anonymous functions', lambdas_re.findall( full ))
-#print( 'all objects', objects_re.findall( full ))
 
 # identify scopes
 # misc & imprecise
@@ -140,3 +170,11 @@ identify( full, lambdas_re,           'function (anon, assigned)' )
 identify( full, objects_re,           'object' )
 
 pretty_print( root )
+
+# build dot
+dot = graphviz.Digraph()
+add_gensym( root )
+add_nodes( root, dot )
+add_edges( root, dot )
+dot.save( 'dot.dot' )
+# subprocess.call(['dot', '-V']) # won't work because of emacs/python path fu
