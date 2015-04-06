@@ -9,18 +9,16 @@
 # [x] store the start/end (span) indices of re.search inside the nodes
 # [x] use indices and re.match to find the blocks' preceding statements and figure out their type and name
 # [x] strip comments from file before parsing
-# [ ] identify all necessary js blocks by regexp
+# [x] identify all necessary js blocks by regexp
+# [ ] remove uninteresting blocks (if, for, return, ...)
+
 # [ ] resolve 'this.'-references (both as names and as calls)
 # [ ] generate symbols for callable blocks
 # [ ] parse 'called known functions' from block body
 # [ ] correlate called fns with gensyms
 
 # [ ] find a better python representation than dictionaries
-# [ ] remove uninteresting blocks (if, for, return, ...)
 
-# [ ] .dot helper functions
-# [ ] build .dot representation
-# [ ] shell out to graphviz
 # [ ] profit
 
 import re
@@ -61,6 +59,8 @@ root = { "name": "root",
 # -----------------------------------------------------------------------------
 # functions
 
+# -------------------------------------
+# tree
 def climb3( string, 
             parent, 
             search_offset=0 ):
@@ -106,19 +106,10 @@ def identify( string, regex, kind, offset=0 ):
         entry['type'] = kind
     identify( string, regex, kind, match.end() )
 
-def pretty_print( root, indent = 0 ):
-    # print the scope tree using meaningful indentation
-    print( " " * indent, 
-           root['name'],
-           "(", root['type'], ")",
-           #root['start'], root['end'],
-           sep = " " )
-    for e in root['children']:
-        pretty_print( e, indent + 4 )
 
+# -------------------------------------
+# graph
 gensym_counter = 0
-
-print( 'hey duude', gensym_counter )
 
 def add_gensym( root ):
     global gensym_counter
@@ -128,6 +119,9 @@ def add_gensym( root ):
         add_gensym( child )
 
 def add_nodes( root, graph ):
+    if root['name'] == None:
+        return
+    print( root['name'] )
     if root['type'] == 'object':
         graph.attr( 'node', shape='box' )
     else:
@@ -140,14 +134,29 @@ def add_nodes( root, graph ):
 def add_edges( root, graph ):
     graph.attr( 'edge', arrowhead='odot')
     for child in root['children']:
+        if child['name'] == None:
+            continue
         graph.edge( root['gensym'], child['gensym'] )
         add_edges( child, graph )
+    return graph
+
+# -------------------------------------
+# misc
+def pretty_print( root, indent = 0 ):
+    # print the scope tree using meaningful indentation
+    print( " " * indent, 
+           root['name'],
+           "(", root['type'], ")",
+           #root['start'], root['end'],
+           sep = " " )
+    for e in root['children']:
+        pretty_print( e, indent + 4 )
 
 # -----------------------------------------------------------------------------
 # usage
 
-file = open( "test-files/mini.js" )
-#file = open( "test-files/main.js" )
+#file = open( "test-files/mini.js" )
+file = open( "test-files/main.js" )
 full = file.read()
 
 # remove comments
@@ -158,12 +167,14 @@ full = comments_re.sub( "", full )
 climb3( full, root )
 
 # identify scopes
+
 # misc & imprecise
-identify( full, throwaway_lambdas_re, 'function (anon)' )
-identify( full, if_re,                'if-clause' )
-identify( full, else_re,              'else-clause' )
-identify( full, for_re,               'for-loop' )
-identify( full, return_re,            'object (anon)' )
+# identify( full, throwaway_lambdas_re, 'function (anon)' )
+# identify( full, if_re,                'if-clause' )
+# identify( full, else_re,              'else-clause' )
+# identify( full, for_re,               'for-loop' )
+# identify( full, return_re,            'object (anon)' )
+
 # precise (after imprecise because of overwrites :P)
 identify( full, functions_re,         'function' )
 identify( full, lambdas_re,           'function (anon, assigned)' )
