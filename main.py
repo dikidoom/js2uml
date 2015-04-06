@@ -10,7 +10,7 @@
 # [x] use indices and re.match to find the blocks' preceding statements and figure out their type and name
 # [x] strip comments from file before parsing
 # [x] identify all necessary js blocks by regexp
-# [ ] remove uninteresting blocks (if, for, return, ...)
+# [x] remove uninteresting blocks (if, for, return, ...)
 
 # [ ] resolve 'this.'-references (both as names and as calls)
 # [ ] generate symbols for callable blocks
@@ -84,17 +84,6 @@ def climb3( string,
             nextBlock,
             match.end() )
 
-def find_entry_where( root, key, value ):
-    # search the scope tree recursively for a particular entry
-    if root[ key ] == value:
-        return root
-    else:
-        for child in root['children']:
-            found = find_entry_where( child, key, value )
-            if found:
-                return found
-        return None
-
 def identify( string, regex, kind, offset=0 ):
     # identify entries in the scope tree by matching for preceding strings
     match = regex.search( string, offset )
@@ -106,6 +95,70 @@ def identify( string, regex, kind, offset=0 ):
         entry['type'] = kind
     identify( string, regex, kind, match.end() )
 
+def descend( root, *names ):
+    if len( names ) == 0:
+        return root
+    for c in root['children']:
+        if c['name'] == names[0]:
+            return descend( c, *names[1:] )
+    return None
+
+def find_entry_where( root, key, value ):
+    # search the scope tree recursively for a particular entry
+    if root[ key ] == value:
+        return root
+    else:
+        for child in root['children']:
+            found = find_entry_where( child, key, value )
+            if found:
+                return found
+        return None
+
+def find_upwards( root, key, value ):
+    # search the tree *upwards* until the top is found
+    for child in root['children']:
+        if child[ key ] == value:
+            return child
+    if root['type'] == 'top':
+        return None
+    else:
+        return find_upwards( root['parent'], key, value )
+
+def resolve_dot_refs( root ):
+    # recur for children first!
+    mark_delete = [ c for c in root['children'] if resolve_dot_refs( c )]
+    #print( 'name is', root['name'] )
+    #print([ x['name'] for x in mark_delete ])
+    for c in mark_delete:
+        root['children'].remove( c )
+    # split name
+    if '.' in root['name']:
+        print( 'going for', root['name'] )
+        split = root['name'].split('.')
+        # crawl scope upwards until first name is found
+        # (if name is not found, sprawl entire tree until it is found)
+        new_parent = find_upwards( root['parent'], 'name', split[0])
+        if not new_parent:
+            print( 'fuck - no parent found!' )
+            return
+        # assign to new parent
+        # root['parent']['children'].remove( root )
+        new_parent['children'].append( root )
+        new_name = str.join( '.', split[1:] )
+        root['name'] = new_name
+        # recur for new parent
+        resolve_dot_refs( new_parent )
+        # mark for deletion
+        return True
+    else:
+        return False
+    
+def remove_nones( root ):
+    # remove all un-identified objects from graph
+    # NB: might remove un-identified objects with identified children
+    root['children'] = [ c for c in root['children'] if c['name'] is not None ]
+    for c in root['children']:
+        remove_nones( c )
 
 # -------------------------------------
 # graph
@@ -121,7 +174,7 @@ def add_gensym( root ):
 def add_nodes( root, graph ):
     if root['name'] == None:
         return
-    print( root['name'] )
+    #print( root['name'] )
     if root['type'] == 'object':
         graph.attr( 'node', shape='box' )
     else:
@@ -180,7 +233,17 @@ identify( full, functions_re,         'function' )
 identify( full, lambdas_re,           'function (anon, assigned)' )
 identify( full, objects_re,           'object' )
 
-pretty_print( root )
+#pretty_print( root )
+
+#print( "----------------" )
+
+remove_nones( root )
+#pretty_print( root )
+
+#print( "----------------" )
+
+resolve_dot_refs( root )
+#pretty_print( root )
 
 # build dot
 dot = graphviz.Digraph()

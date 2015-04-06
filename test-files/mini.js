@@ -17,6 +17,10 @@ third = {
 
 third.squishy = function(){ return 1; }; // comments1 { should be ignored }
 
+third.gob = {}
+
+third.gob.swallow = function(){ return NaN; };
+
 fourth = function( reallylongvariablename, doesitreallymatter ){
   return third.square( 3 ); 
 }
