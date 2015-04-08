@@ -15,10 +15,12 @@
 # [x] resolve 'this.'-references (both as names and as calls)
 # [x] generate symbols for callable blocks
 
-# [ ] parse 'called known functions' from block body
-# [ ] correlate called fns with gensyms
+# [x] parse 'called known functions' from block body
+# [x] correlate called fns with gensyms
 
 # [ ] find a better python representation than dictionaries
+#  ?  what happens when 'this.foo = function(){...' occurs inside a function?
+# [ ] uniquify ['calls-found'] property of nodes
 
 # [ ] profit
 
@@ -36,7 +38,7 @@ comments_re          = re.compile( "/\*.*?\*/", re.S )
 
 # block structure
 curlybraces_re       = re.compile( "([{}])" )
-call_re              = re.compile( "([^-+*/\(,\s]*?)\s*\([^\)]*?\)\s*[^{]" )
+call_re              = re.compile( "([^-+*/\(,\s]*?)\s*\([^\(\)]*?\)\s*[^{]" )
 
 # things we care about ...
 functions_re         = re.compile( "function\s*([^\(]+?)\s*\(.*?\)\s*{" )
@@ -57,7 +59,8 @@ root = { "name": "root",
          "end": None,
          "parent": None,
          "children": [],
-         "calls": [] }
+         "calls": [],
+         "calls-found": [] }
 
 # -----------------------------------------------------------------------------
 # functions
@@ -78,7 +81,8 @@ def scope_tree( string,
                       "start": match.start(), # including '{'
                       "parent": parent,
                       "children": [],
-                      "calls": [] }
+                      "calls": [],
+                      "calls-found": [] }
         parent['children'].append( nextBlock )
     else:
         # print( "close" )
@@ -89,6 +93,7 @@ def scope_tree( string,
             match.end() )
 
 def scope_contains( scope, start, end ):
+    # check wether start & end are within scope span
     return scope['start'] <= start and scope['end'] >= end
 
 def best_containing_scope( root, start, end ):
@@ -99,6 +104,7 @@ def best_containing_scope( root, start, end ):
     return root
 
 def find_calls( string, root, offset=0 ):
+    # match call signatures in source string and assign to 
     match = call_re.search( string, offset )
     if not match:
         return
@@ -106,12 +112,46 @@ def find_calls( string, root, offset=0 ):
     scope['calls'].append( match.group( 1 ))
     find_calls( string, root, match.end() )
 
+def top( root ):
+    if root['type'] == 'top':
+        return root
+    else:
+        return top( root['parent'] )
+
+def find_call( root, call ):
+    tip = top( root )
+    if '.' in call:
+        split = call.split('.')
+        if split[0] == 'this':
+            # refers to parent object or function
+            return select( root['parent'], *split[1:] )
+        else:
+            # refers to some other object
+            return select( tip, *split )
+    else:
+        # single name, just look for it everywhere
+        return find_down( tip, 'name', call )
+
+def register_call( root, call ):
+    address = find_call( root, call )
+    if not address:
+        return
+    root['calls-found'].append( address['gensym'] )
+
+def address_calls( root ):
+    # try to find the gensym's of a scope's calls
+    # so we can draw arrows into the graph
+    for child in root['children']:
+        address_calls( child )
+    for call in root['calls']:
+        register_call( root, call )
+
 def identify( string, regex, kind, offset=0 ):
     # identify entries in the scope tree by matching for preceding strings
     match = regex.search( string, offset )
     if not match:
         return
-    entry = find_entry_where( root, 'start', match.end()-1 )
+    entry = find_down( root, 'start', match.end()-1 )
     if entry:
         entry['name'] = match.group( 1 )
         entry['type'] = kind
@@ -127,18 +167,18 @@ def select( root, *names ):
             return select( c, *names[1:] )
     return None
 
-def find_entry_where( root, key, value ):
+def find_down( root, key, value ):
     # search the scope tree recursively for a particular entry
     if root[ key ] == value:
         return root
     else:
         for child in root['children']:
-            found = find_entry_where( child, key, value )
+            found = find_down( child, key, value )
             if found:
                 return found
         return None
 
-def find_upwards( root, key, value ):
+def find_up( root, key, value ):
     # search the tree *upwards* until the top is found
     for child in root['children']:
         if child[ key ] == value:
@@ -146,13 +186,12 @@ def find_upwards( root, key, value ):
     if root['type'] == 'top':
         return None
     else:
-        return find_upwards( root['parent'], key, value )
+        return find_up( root['parent'], key, value )
 
 def resolve_dot_refs( root ):
+    # properly parent all 'a.b.c' children in the tree
     # recur for children first!
     mark_delete = [ c for c in root['children'] if resolve_dot_refs( c )]
-    #print( 'name is', root['name'] )
-    #print([ x['name'] for x in mark_delete ])
     for c in mark_delete:
         root['children'].remove( c )
     # split name
@@ -161,12 +200,12 @@ def resolve_dot_refs( root ):
         split = root['name'].split('.')
         # crawl scope upwards until first name is found
         # (if name is not found, sprawl entire tree until it is found)
-        new_parent = find_upwards( root['parent'], 'name', split[0])
+        new_parent = find_up( root['parent'], 'name', split[0])
         if not new_parent:
-            print( 'fuck - no parent found!' )
+            # TODO fix this condition by searching the entire tree
+            print( 'ERROR: no parent found!' )
             return
         # assign to new parent
-        # root['parent']['children'].remove( root )
         new_parent['children'].append( root )
         new_name = str.join( '.', split[1:] )
         root['name'] = new_name
@@ -196,6 +235,8 @@ def add_gensym( root ):
         add_gensym( child )
 
 def add_nodes( root, graph ):
+    for child in root['children']:
+        add_nodes( child, graph )
     if root['name'] == None:
         return
     #print( root['name'] )
@@ -204,17 +245,20 @@ def add_nodes( root, graph ):
     else:
         graph.attr( 'node', shape='ellipse' )
     graph.node( root['gensym'], root['name'] )
-    for child in root['children']:
-        add_nodes( child, graph )
     return graph
 
 def add_edges( root, graph ):
-    graph.attr( 'edge', arrowhead='odot')
     for child in root['children']:
+        add_edges( child, graph )
         if child['name'] == None:
             continue
+        if root['type'] == 'top':
+            continue
+        graph.attr( 'edge', arrowhead='none', arrowtail='odot', dir='both')
         graph.edge( root['gensym'], child['gensym'] )
-        add_edges( child, graph )
+    for call in root['calls-found']:
+        graph.attr( 'edge', arrowhead='normal', dir='forward' )
+        graph.edge( root['gensym'], call )
     return graph
 
 # -------------------------------------
@@ -224,8 +268,9 @@ def pretty_print( root, indent = 0 ):
     print( " " * indent, 
            root['name'],
            "(", root['type'], ")",
-           root['start'], root['end'],
+           #root['start'], root['end'],
            root['calls'],
+           root['calls-found'],
            sep = " " )
     for e in root['children']:
         pretty_print( e, indent + 4 )
@@ -233,49 +278,50 @@ def pretty_print( root, indent = 0 ):
 # -----------------------------------------------------------------------------
 # usage
 
-file = open( "test-files/mini.js" )
-#file = open( "test-files/main.js" )
+def add_file( root, full ):
+    # remove comments
+    full = inlinecomments_re.sub( "", full )
+    full = comments_re.sub( "", full )
+    
+    # build scope tree
+    scope_tree( full, root )
+    
+    # identify scopes
+    
+    # misc & imprecise
+    # identify( full, throwaway_lambdas_re, 'function (anon)' )
+    # identify( full, if_re,                'if-clause' )
+    # identify( full, else_re,              'else-clause' )
+    # identify( full, for_re,               'for-loop' )
+    # identify( full, return_re,            'object (anon)' )
+    
+    # precise (after imprecise because of overwrites :P)
+    identify( full, functions_re,         'function' )
+    identify( full, lambdas_re,           'function' ) # anonymous but assigned
+    identify( full, objects_re,           'object' )
+    
+    # tree shaking
+    remove_nones( root )
+    # tree massaging
+    resolve_dot_refs( root )
+    # unique adresses
+    add_gensym( root )
+    
+    # regexp-search for calls within scopes
+    find_calls( full, root )
+    # resolve call gensyms
+    address_calls( root )
+    
+#file = open( "test-files/mini.js" )
+file = open( "test-files/main.js" )
 full = file.read()
 
-# remove comments
-full = inlinecomments_re.sub( "", full )
-full = comments_re.sub( "", full )
-
-# build scope tree
-scope_tree( full, root )
-
-# identify scopes
-
-# misc & imprecise
-# identify( full, throwaway_lambdas_re, 'function (anon)' )
-# identify( full, if_re,                'if-clause' )
-# identify( full, else_re,              'else-clause' )
-# identify( full, for_re,               'for-loop' )
-# identify( full, return_re,            'object (anon)' )
-
-# precise (after imprecise because of overwrites :P)
-identify( full, functions_re,         'function' )
-identify( full, lambdas_re,           'function (anon, assigned)' )
-identify( full, objects_re,           'object' )
-
-#pretty_print( root )
-
-#print( "----------------" )
-
-remove_nones( root )
-#pretty_print( root )
-
-#print( "----------------" )
-
-resolve_dot_refs( root )
-
-# find calls within scopes
-find_calls( full, root )
+add_file( root, full )
 pretty_print( root )
 
 # build dot
 dot = graphviz.Digraph()
-add_gensym( root )
+dot.attr( 'graph', splines='ortho' )
 add_nodes( root, dot )
 add_edges( root, dot )
 dot.save( 'dot.dot' )
