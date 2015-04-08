@@ -12,8 +12,9 @@
 # [x] identify all necessary js blocks by regexp
 # [x] remove uninteresting blocks (if, for, return, ...)
 
-# [ ] resolve 'this.'-references (both as names and as calls)
-# [ ] generate symbols for callable blocks
+# [x] resolve 'this.'-references (both as names and as calls)
+# [x] generate symbols for callable blocks
+
 # [ ] parse 'called known functions' from block body
 # [ ] correlate called fns with gensyms
 
@@ -35,6 +36,7 @@ comments_re          = re.compile( "/\*.*?\*/", re.S )
 
 # block structure
 curlybraces_re       = re.compile( "([{}])" )
+call_re              = re.compile( "([^-+*/\(,\s]*?)\s*\([^\)]*?\)\s*[^{]" )
 
 # things we care about ...
 functions_re         = re.compile( "function\s*([^\(]+?)\s*\(.*?\)\s*{" )
@@ -54,14 +56,15 @@ root = { "name": "root",
          "start": None,
          "end": None,
          "parent": None,
-         "children": [] }
+         "children": [],
+         "calls": [] }
 
 # -----------------------------------------------------------------------------
 # functions
 
 # -------------------------------------
 # tree
-def climb3( string, 
+def scope_tree( string, 
             parent, 
             search_offset=0 ):
     # generate scope tree by recursively matching curly braces
@@ -74,15 +77,34 @@ def climb3( string,
                       "type": None,
                       "start": match.start(), # including '{'
                       "parent": parent,
-                      "children": [] }
+                      "children": [],
+                      "calls": [] }
         parent['children'].append( nextBlock )
     else:
         # print( "close" )
         parent['end'] = match.end() # including '}'
         nextBlock = parent['parent']
-    climb3( string,
+    scope_tree( string,
             nextBlock,
             match.end() )
+
+def scope_contains( scope, start, end ):
+    return scope['start'] <= start and scope['end'] >= end
+
+def best_containing_scope( root, start, end ):
+    # return best fitting child or self if not better fit is found
+    for c in root['children']:
+        if scope_contains( c, start, end ):
+            return best_containing_scope( c, start, end )
+    return root
+
+def find_calls( string, root, offset=0 ):
+    match = call_re.search( string, offset )
+    if not match:
+        return
+    scope = best_containing_scope( root, match.start(), match.end() )
+    scope['calls'].append( match.group( 1 ))
+    find_calls( string, root, match.end() )
 
 def identify( string, regex, kind, offset=0 ):
     # identify entries in the scope tree by matching for preceding strings
@@ -95,12 +117,14 @@ def identify( string, regex, kind, offset=0 ):
         entry['type'] = kind
     identify( string, regex, kind, match.end() )
 
-def descend( root, *names ):
+def select( root, *names ):
+    # try to find the child with name `names[0]` (recursively)
+    # usage: select( root, 'a', 'b' ) --> return child with name 'b' of child with name 'a' of root
     if len( names ) == 0:
         return root
     for c in root['children']:
         if c['name'] == names[0]:
-            return descend( c, *names[1:] )
+            return select( c, *names[1:] )
     return None
 
 def find_entry_where( root, key, value ):
@@ -200,7 +224,8 @@ def pretty_print( root, indent = 0 ):
     print( " " * indent, 
            root['name'],
            "(", root['type'], ")",
-           #root['start'], root['end'],
+           root['start'], root['end'],
+           root['calls'],
            sep = " " )
     for e in root['children']:
         pretty_print( e, indent + 4 )
@@ -208,8 +233,8 @@ def pretty_print( root, indent = 0 ):
 # -----------------------------------------------------------------------------
 # usage
 
-#file = open( "test-files/mini.js" )
-file = open( "test-files/main.js" )
+file = open( "test-files/mini.js" )
+#file = open( "test-files/main.js" )
 full = file.read()
 
 # remove comments
@@ -217,7 +242,7 @@ full = inlinecomments_re.sub( "", full )
 full = comments_re.sub( "", full )
 
 # build scope tree
-climb3( full, root )
+scope_tree( full, root )
 
 # identify scopes
 
@@ -243,7 +268,10 @@ remove_nones( root )
 #print( "----------------" )
 
 resolve_dot_refs( root )
-#pretty_print( root )
+
+# find calls within scopes
+find_calls( full, root )
+pretty_print( root )
 
 # build dot
 dot = graphviz.Digraph()
